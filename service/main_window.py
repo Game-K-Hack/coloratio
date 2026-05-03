@@ -20,9 +20,9 @@ def _resource_path(name: str) -> str:
     base = getattr(sys, "_MEIPASS", os.path.dirname(os.path.abspath(__file__)))
     return os.path.join(base, name)
 
-from color_utils import pil_to_qpixmap, quantize_full
-from process_thread import ProcessThread
-from widgets import ColorRow, ColorSwatch, ImageView
+from service.color_utils import pil_to_qpixmap, quantize_full
+from service.process_thread import ProcessThread
+from service.widgets import ColorRow, ColorSwatch, ImageView
 
 
 # Plafond de resolution pour le traitement temps-reel

@@ -3,7 +3,7 @@ import sys
 from PyQt5.QtWidgets import QApplication
 from PyQt5.QtGui import QIcon
 
-from main_window import MainWindow, _resource_path
+from service.main_window import MainWindow, _resource_path
 
 
 def main():

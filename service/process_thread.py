@@ -3,7 +3,7 @@ import numpy as np
 from PIL import Image
 from PyQt5.QtCore import QThread, pyqtSignal
 
-from color_utils import rgb_to_hsv_np, hsv_to_rgb_np
+from service.color_utils import rgb_to_hsv_np, hsv_to_rgb_np
 
 
 class ProcessThread(QThread):
