@@ -12,7 +12,7 @@ from PyQt5.QtGui import QColor, QIcon, QDesktopServices, QPixmap
 APP_NAME = "Coloratio"
 APP_VERSION = "0.1.0"
 APP_AUTHOR = "Harlock"
-APP_GITHUB = "https://github.com/Game-K-Hack/coloration"
+APP_GITHUB = "https://github.com/Game-K-Hack/coloratio"
 
 
 def _resource_path(name: str) -> str:
