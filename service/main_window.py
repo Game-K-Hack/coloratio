@@ -17,7 +17,7 @@ from service.i18n import tr, LANGUAGES, signaler, set_language
 
 
 APP_NAME = "Coloratio"
-APP_VERSION = "0.1.0"
+APP_VERSION = "0.1.1"
 APP_AUTHOR = "Harlock"
 APP_GITHUB = "https://github.com/Game-K-Hack/coloratio"
 
