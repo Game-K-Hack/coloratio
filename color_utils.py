@@ -1,7 +1,4 @@
-"""Conversions de couleurs et quantification de palette."""
-
 from collections import Counter
-
 import numpy as np
 from PIL import Image
 from PyQt5.QtGui import QImage, QPixmap
@@ -27,6 +24,36 @@ def quantize_colors(pil_img: Image.Image, max_colors: int = 32):
         ((palette[i * 3], palette[i * 3 + 1], palette[i * 3 + 2]), c)
         for i, c in counts.most_common()
     ]
+
+
+def quantize_full(pil_img: Image.Image, max_colors: int = 32):
+    """
+    Quantifie l'image ENTIERE et retourne :
+      - index_map : ndarray (H, W) uint8/int des indices palette par pixel
+      - palette   : liste [(r,g,b), ...] alignee avec les indices
+      - counts    : liste alignee du nombre de pixels par index
+    Permet d'agir sur 100% des pixels d'un cluster, sans tolerance RGB.
+    """
+    rgb_img = pil_img.convert("RGB")
+    q = rgb_img.quantize(colors=max_colors, method=Image.Quantize.FASTOCTREE)
+    n = max_colors
+    pal_raw = q.getpalette()[: n * 3]
+    palette = [(pal_raw[i * 3], pal_raw[i * 3 + 1], pal_raw[i * 3 + 2])
+               for i in range(n)]
+    index_map = np.array(q, dtype=np.int32)
+    flat = index_map.ravel()
+    counts_arr = np.bincount(flat, minlength=n)
+    # Filtrer les indices reellement utilises et trier par frequence
+    used = [i for i in range(n) if counts_arr[i] > 0]
+    used.sort(key=lambda i: -counts_arr[i])
+    palette = [palette[i] for i in used]
+    counts = [int(counts_arr[i]) for i in used]
+    # Remap des indices pour qu'ils correspondent a la liste filtree+triee
+    remap = np.full(n, -1, dtype=np.int32)
+    for new_i, old_i in enumerate(used):
+        remap[old_i] = new_i
+    index_map = remap[index_map]
+    return index_map, palette, counts
 
 
 def rgb_to_hsv_np(rgb: np.ndarray) -> np.ndarray:

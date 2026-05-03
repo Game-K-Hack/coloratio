@@ -1,18 +1,15 @@
-"""Widgets reutilisables : ligne de couleur, swatch fixe, vue image stable."""
-
 from PyQt5.QtCore import Qt, QSize
 from PyQt5.QtGui import QPixmap, QColor, QPainter
-from PyQt5.QtWidgets import (
-    QWidget, QHBoxLayout, QLabel, QCheckBox, QFrame, QSizePolicy
-)
+from PyQt5.QtWidgets import QWidget, QHBoxLayout, QLabel, QCheckBox, QFrame, QSizePolicy
 
 
 class ColorRow(QWidget):
     """Ligne palette : checkbox + swatch + texte HEX/RGB."""
 
-    def __init__(self, rgb, count, parent=None):
+    def __init__(self, rgb, count, index=-1, parent=None):
         super().__init__(parent)
         self.rgb = rgb
+        self.index = index
         layout = QHBoxLayout(self)
         layout.setContentsMargins(4, 2, 4, 2)
 

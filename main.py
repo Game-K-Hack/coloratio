@@ -1,5 +1,3 @@
-"""Point d'entree Coloratio."""
-
 import sys
 from PyQt5.QtWidgets import QApplication
 

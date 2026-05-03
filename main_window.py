@@ -1,15 +1,12 @@
-"""Fenetre principale Coloratio."""
-
 from PIL import Image
 from PyQt5.QtCore import Qt
 from PyQt5.QtWidgets import (
     QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton,
     QFileDialog, QSplitter, QScrollArea, QSlider, QColorDialog, QGroupBox,
-    QAction, QMessageBox, QProgressBar, QSpinBox
-)
+    QAction, QMessageBox, QProgressBar, QSpinBox, QComboBox)
 from PyQt5.QtGui import QColor
 
-from color_utils import pil_to_qpixmap, quantize_colors
+from color_utils import pil_to_qpixmap, quantize_full
 from process_thread import ProcessThread
 from widgets import ColorRow, ColorSwatch, ImageView
 
@@ -31,6 +28,9 @@ class MainWindow(QMainWindow):
         self.target_rgb = (255, 255, 255)
         self.thread = None
         self.pending = False
+        # Carte d'indices palette pour l'image de travail
+        self.index_map = None
+        self.palette = []
 
         self._build_menu()
         self._build_ui()
@@ -108,13 +108,25 @@ class MainWindow(QMainWindow):
             gl.addLayout(row)
             self.sliders[name] = (s, v)
 
+        # Mode de masque
+        mode_row = QHBoxLayout()
+        mode_row.addWidget(QLabel("Masque"))
+        self.mode_combo = QComboBox()
+        self.mode_combo.addItem("Cluster palette (tous les pixels)", "index")
+        self.mode_combo.addItem("Tolerance RGB", "tolerance")
+        self.mode_combo.currentIndexChanged.connect(self._on_mode_changed)
+        mode_row.addWidget(self.mode_combo, 1)
+        gl.addLayout(mode_row)
+
         tol = QHBoxLayout()
-        tol.addWidget(QLabel("Tolerance"))
+        self.tol_label = QLabel("Tolerance")
+        tol.addWidget(self.tol_label)
         self.tol_slider = QSlider(Qt.Horizontal)
         self.tol_slider.setRange(0, 64); self.tol_slider.setValue(12)
         self.tol_slider.valueChanged.connect(lambda _: self._schedule_update())
         tol.addWidget(self.tol_slider)
         gl.addLayout(tol)
+        self._update_tolerance_enabled()
         ll.addWidget(grp)
 
         # -- droite --
@@ -186,14 +198,26 @@ class MainWindow(QMainWindow):
 
     def _render_full_resolution(self):
         """Reapplique la transformation sur l'originale pleine resolution."""
-        selected = [r.rgb for r in self.color_rows if r.is_checked()]
-        if not selected or self.original_img.size == self.display_img.size:
+        selected_rows = [r for r in self.color_rows if r.is_checked()]
+        if not selected_rows or self.original_img.size == self.display_img.size:
             return self.modified_img
-        th = ProcessThread(self.original_img, selected,
-                           self.target_rgb, self.tol_slider.value())
+
+        selected = [r.rgb for r in selected_rows]
+        indices = [r.index for r in selected_rows]
+        mode = self.mode_combo.currentData()
+        full_index_map = None
+        if mode == "index":
+            full_index_map, _, _ = quantize_full(
+                self.original_img, self.palette_spin.value()
+            )
+        th = ProcessThread(
+            self.original_img, selected, self.target_rgb,
+            mode=mode, tolerance=self.tol_slider.value(),
+            index_map=full_index_map, selected_indices=indices,
+        )
         result = {}
         th.finished_img.connect(lambda im: result.setdefault("img", im))
-        th.run()  # synchrone : QThread.run direct
+        th.run()
         return result.get("img", self.modified_img)
 
     # ------------------------------------------------------------- palette
@@ -204,8 +228,12 @@ class MainWindow(QMainWindow):
         self.color_rows.clear()
         if self.display_img is None:
             return
-        for rgb, count in quantize_colors(self.display_img, self.palette_spin.value()):
-            row = ColorRow(rgb, count)
+        # Quantifie l'image ENTIERE -> chaque pixel a un index palette
+        self.index_map, self.palette, counts = quantize_full(
+            self.display_img, self.palette_spin.value()
+        )
+        for idx, (rgb, count) in enumerate(zip(self.palette, counts)):
+            row = ColorRow(rgb, count, index=idx)
             row.checkbox.stateChanged.connect(lambda _: self._schedule_update())
             self.color_layout.addWidget(row)
             self.color_rows.append(row)
@@ -251,12 +279,27 @@ class MainWindow(QMainWindow):
         self._launch_thread()
 
     def _launch_thread(self):
-        selected = [r.rgb for r in self.color_rows if r.is_checked()]
+        selected_rows = [r for r in self.color_rows if r.is_checked()]
+        selected = [r.rgb for r in selected_rows]
+        indices = [r.index for r in selected_rows]
+        mode = self.mode_combo.currentData()
         self.progress.show()
-        self.thread = ProcessThread(self.display_img, selected,
-                                    self.target_rgb, self.tol_slider.value())
+        self.thread = ProcessThread(
+            self.display_img, selected, self.target_rgb,
+            mode=mode, tolerance=self.tol_slider.value(),
+            index_map=self.index_map, selected_indices=indices,
+        )
         self.thread.finished_img.connect(self._on_processed)
         self.thread.start()
+
+    def _on_mode_changed(self, _):
+        self._update_tolerance_enabled()
+        self._schedule_update()
+
+    def _update_tolerance_enabled(self):
+        is_tol = self.mode_combo.currentData() == "tolerance"
+        self.tol_slider.setEnabled(is_tol)
+        self.tol_label.setEnabled(is_tol)
 
     def _on_processed(self, img):
         self.modified_img = img

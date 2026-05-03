@@ -1,7 +1,4 @@
-"""Thread de traitement : decalage HSV relatif des pixels selectionnes."""
-
 import colorsys
-
 import numpy as np
 from PIL import Image
 from PyQt5.QtCore import QThread, pyqtSignal
@@ -10,14 +7,26 @@ from color_utils import rgb_to_hsv_np, hsv_to_rgb_np
 
 
 class ProcessThread(QThread):
-    finished_img = pyqtSignal(object)  # PIL.Image
+    """
+    Modes de masquage :
+      - "index"     : utilise index_map (un pixel = un cluster), 100% des pixels
+                      du cluster sont touches. Pas de tolerance.
+      - "tolerance" : compare chaque pixel aux RGB selectionnes a +/- tol.
+    """
 
-    def __init__(self, base_img: Image.Image, selected_rgbs, target_rgb, tolerance):
+    finished_img = pyqtSignal(object)
+
+    def __init__(self, base_img, selected_rgbs, target_rgb,
+                 mode="index", tolerance=12,
+                 index_map=None, selected_indices=None):
         super().__init__()
         self.base_img = base_img
         self.selected_rgbs = selected_rgbs
         self.target_rgb = target_rgb
+        self.mode = mode
         self.tolerance = tolerance
+        self.index_map = index_map
+        self.selected_indices = selected_indices or []
 
     def run(self):
         if not self.selected_rgbs:
@@ -29,21 +38,14 @@ class ProcessThread(QThread):
         rgb = arr[..., :3]
         alpha = arr[..., 3:4]
 
-        # Reference = barycentre RGB des couleurs cochees
         ref_rgb = np.array(self.selected_rgbs, dtype=np.float32).mean(axis=0)
         ref_hsv = colorsys.rgb_to_hsv(*(ref_rgb / 255.0))
         target_hsv = colorsys.rgb_to_hsv(*(np.array(self.target_rgb) / 255.0))
-
         dh = target_hsv[0] - ref_hsv[0]
         ds = target_hsv[1] - ref_hsv[1]
         dv = target_hsv[2] - ref_hsv[2]
 
-        tol = max(1, int(self.tolerance))
-        mask = np.zeros(rgb.shape[:2], dtype=bool)
-        for c in self.selected_rgbs:
-            diff = np.abs(rgb.astype(np.int16) - np.array(c, dtype=np.int16))
-            mask |= np.all(diff <= tol, axis=-1)
-
+        mask = self._build_mask(rgb)
         if not mask.any():
             self.finished_img.emit(self.base_img.copy())
             return
@@ -57,3 +59,16 @@ class ProcessThread(QThread):
         out[mask] = hsv_to_rgb_np(sub_hsv)
         result = np.concatenate([out, alpha], axis=-1)
         self.finished_img.emit(Image.fromarray(result, mode="RGBA"))
+
+    def _build_mask(self, rgb):
+        if self.mode == "index" and self.index_map is not None and self.selected_indices:
+            sel = np.array(self.selected_indices, dtype=np.int32)
+            return np.isin(self.index_map, sel)
+
+        # Mode tolerance (rapide, comparaison par canal)
+        tol = max(0, int(self.tolerance))
+        mask = np.zeros(rgb.shape[:2], dtype=bool)
+        for c in self.selected_rgbs:
+            diff = np.abs(rgb.astype(np.int16) - np.array(c, dtype=np.int16))
+            mask |= np.all(diff <= tol, axis=-1)
+        return mask
