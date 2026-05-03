@@ -34,6 +34,7 @@ class MainWindow(QMainWindow):
         super().__init__()
         self.setWindowTitle("Coloratio")
         self.resize(1200, 800)
+        self.setMinimumSize(1200, 800)
         icon_path = _resource_path("logo.ico")
         if os.path.exists(icon_path):
             self.setWindowIcon(QIcon(icon_path))
