@@ -1,12 +1,18 @@
 import os
 import sys
 from PIL import Image
-from PyQt5.QtCore import Qt
+from PyQt5.QtCore import Qt, QUrl
+from PyQt5.QtGui import QDesktopServices, QPixmap
 from PyQt5.QtWidgets import (
     QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton,
     QFileDialog, QSplitter, QScrollArea, QSlider, QColorDialog, QGroupBox,
     QAction, QMessageBox, QProgressBar, QSpinBox, QComboBox)
-from PyQt5.QtGui import QColor, QIcon
+from PyQt5.QtGui import QColor, QIcon, QDesktopServices, QPixmap
+
+APP_NAME = "Coloratio"
+APP_VERSION = "0.1.0"
+APP_AUTHOR = "Harlock"
+APP_GITHUB = "https://github.com/Game-K-Hack/coloration"
 
 
 def _resource_path(name: str) -> str:
@@ -49,7 +55,9 @@ class MainWindow(QMainWindow):
     # ------------------------------------------------------------------ UI
 
     def _build_menu(self):
-        m = self.menuBar().addMenu("&Fichier")
+        bar = self.menuBar()
+
+        m = bar.addMenu("&Fichier")
         for label, sc, fn in [
             ("Ouvrir...", "Ctrl+O", self.open_image),
             ("Enregistrer sous...", "Ctrl+S", self.save_image),
@@ -59,6 +67,39 @@ class MainWindow(QMainWindow):
         m.addSeparator()
         q = QAction("Quitter", self); q.triggered.connect(self.close)
         m.addAction(q)
+
+        h = bar.addMenu("&Aide")
+        doc = QAction("Documentation", self)
+        doc.setShortcut("F1")
+        doc.triggered.connect(self._open_documentation)
+        h.addAction(doc)
+        about = QAction("A propos", self)
+        about.triggered.connect(self._show_about)
+        h.addAction(about)
+
+    def _open_documentation(self):
+        QDesktopServices.openUrl(QUrl(APP_GITHUB))
+
+    def _show_about(self):
+        dlg = QMessageBox(self)
+        dlg.setWindowTitle(f"A propos de {APP_NAME}")
+        icon_path = _resource_path("logo.ico")
+        if os.path.exists(icon_path):
+            pix = QPixmap(icon_path).scaled(
+                64, 64, Qt.KeepAspectRatio, Qt.SmoothTransformation
+            )
+            dlg.setIconPixmap(pix)
+        dlg.setTextFormat(Qt.RichText)
+        dlg.setText(
+            f"<h2>{APP_NAME}</h2>"
+            f"<p><b>Version :</b> {APP_VERSION}<br>"
+            f"<b>Auteur :</b> {APP_AUTHOR}</p>"
+            f"<p>Editeur de couleurs interactif base sur PyQt5, "
+            f"Pillow et NumPy.</p>"
+            f"<p><a href=\"{APP_GITHUB}\">{APP_GITHUB}</a></p>"
+        )
+        dlg.setStandardButtons(QMessageBox.Ok)
+        dlg.exec_()
 
     def _build_ui(self):
         splitter = QSplitter(Qt.Horizontal)
