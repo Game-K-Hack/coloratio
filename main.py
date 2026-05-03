@@ -21,6 +21,10 @@ def main():
     if os.path.exists(icon_path):
         app.setWindowIcon(QIcon(icon_path))
 
+    # Detection auto de la langue d'interface au demarrage
+    from service import i18n
+    i18n.current_lang = i18n.detect_system_language()
+
     win = MainWindow()
     win.show()
     sys.exit(app.exec_())

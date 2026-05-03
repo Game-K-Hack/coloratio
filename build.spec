@@ -21,7 +21,11 @@ a = Analysis(
     ["main.py"],
     pathex=["."],
     binaries=[],
-    datas=[("logo.ico", "."), ("logo.png", ".")],
+    datas=[
+        ("logo.ico", "."),
+        ("logo.png", "."),
+        ("locales/*.json", "locales"),
+    ],
     hiddenimports=hidden,
     hookspath=[],
     hooksconfig={},

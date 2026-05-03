@@ -2,37 +2,39 @@ import os
 import sys
 from PIL import Image
 from PyQt5.QtCore import Qt, QUrl
-from PyQt5.QtGui import QDesktopServices, QPixmap
+from PyQt5.QtGui import QColor, QIcon, QDesktopServices, QPixmap
 from PyQt5.QtWidgets import (
     QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton,
     QFileDialog, QSplitter, QScrollArea, QSlider, QColorDialog, QGroupBox,
-    QAction, QMessageBox, QProgressBar, QSpinBox, QComboBox)
-from PyQt5.QtGui import QColor, QIcon, QDesktopServices, QPixmap
+    QAction, QActionGroup, QMessageBox, QProgressBar, QSpinBox, QComboBox,
+)
+
+from service.color_utils import pil_to_qpixmap, quantize_full
+from service.process_thread import ProcessThread
+from service.widgets import ColorRow, ColorSwatch, ImageView
+from service import i18n
+from service.i18n import tr, LANGUAGES, signaler, set_language
+
 
 APP_NAME = "Coloratio"
 APP_VERSION = "0.1.0"
 APP_AUTHOR = "Harlock"
 APP_GITHUB = "https://github.com/Game-K-Hack/coloratio"
 
+WORK_MAX = 1600
+
 
 def _resource_path(name: str) -> str:
     """Resout un fichier ressource en mode dev ou dans un EXE PyInstaller."""
-    base = getattr(sys, "_MEIPASS", os.path.dirname(os.path.abspath(__file__)))
+    base = getattr(sys, "_MEIPASS",
+                   os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
     return os.path.join(base, name)
-
-from service.color_utils import pil_to_qpixmap, quantize_full
-from service.process_thread import ProcessThread
-from service.widgets import ColorRow, ColorSwatch, ImageView
-
-
-# Plafond de resolution pour le traitement temps-reel
-WORK_MAX = 1600
 
 
 class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
-        self.setWindowTitle("Coloratio")
+        self.setWindowTitle(APP_NAME)
         self.resize(1200, 800)
         self.setMinimumSize(1200, 800)
         icon_path = _resource_path("logo.ico")
@@ -46,44 +48,70 @@ class MainWindow(QMainWindow):
         self.target_rgb = (255, 255, 255)
         self.thread = None
         self.pending = False
-        # Carte d'indices palette pour l'image de travail
         self.index_map = None
         self.palette = []
 
+        # Stocke les widgets qui portent du texte traduisible afin
+        # de pouvoir les retraduire a la volee.
+        self._tr_widgets = {}
+
         self._build_menu()
         self._build_ui()
+        self._retranslate_ui()
 
-    # ------------------------------------------------------------------ UI
+        # Re-traduction automatique a chaque changement de langue
+        signaler.language_changed.connect(self._retranslate_ui)
+
+    # ---------------------------------------------------------------- menu
 
     def _build_menu(self):
         bar = self.menuBar()
 
-        m = bar.addMenu("&Fichier")
-        for label, sc, fn in [
-            ("Ouvrir...", "Ctrl+O", self.open_image),
-            ("Enregistrer sous...", "Ctrl+S", self.save_image),
-        ]:
-            a = QAction(label, self); a.setShortcut(sc); a.triggered.connect(fn)
-            m.addAction(a)
-        m.addSeparator()
-        q = QAction("Quitter", self); q.triggered.connect(self.close)
-        m.addAction(q)
+        # --- Fichier ---
+        self.menu_file = bar.addMenu("")
+        self.act_open = QAction(self); self.act_open.setShortcut("Ctrl+O")
+        self.act_open.triggered.connect(self.open_image)
+        self.menu_file.addAction(self.act_open)
 
-        h = bar.addMenu("&Aide")
-        doc = QAction("Documentation", self)
-        doc.setShortcut("F1")
-        doc.triggered.connect(self._open_documentation)
-        h.addAction(doc)
-        about = QAction("A propos", self)
-        about.triggered.connect(self._show_about)
-        h.addAction(about)
+        self.act_save = QAction(self); self.act_save.setShortcut("Ctrl+S")
+        self.act_save.triggered.connect(self.save_image)
+        self.menu_file.addAction(self.act_save)
+
+        self.menu_file.addSeparator()
+        self.act_quit = QAction(self); self.act_quit.triggered.connect(self.close)
+        self.menu_file.addAction(self.act_quit)
+
+        # --- Langue ---
+        self.menu_language = bar.addMenu("")
+        self.lang_group = QActionGroup(self)
+        self.lang_group.setExclusive(True)
+        self.lang_actions = {}
+        for code, label in LANGUAGES.items():
+            a = QAction(label, self, checkable=True)
+            a.setData(code)
+            a.triggered.connect(lambda _checked, c=code: set_language(c))
+            self.lang_group.addAction(a)
+            self.menu_language.addAction(a)
+            self.lang_actions[code] = a
+        # Coche l'entree correspondant a la langue active
+        if i18n.current_lang in self.lang_actions:
+            self.lang_actions[i18n.current_lang].setChecked(True)
+
+        # --- Aide ---
+        self.menu_help = bar.addMenu("")
+        self.act_doc = QAction(self); self.act_doc.setShortcut("F1")
+        self.act_doc.triggered.connect(self._open_documentation)
+        self.menu_help.addAction(self.act_doc)
+        self.act_about = QAction(self)
+        self.act_about.triggered.connect(self._show_about)
+        self.menu_help.addAction(self.act_about)
 
     def _open_documentation(self):
         QDesktopServices.openUrl(QUrl(APP_GITHUB))
 
     def _show_about(self):
         dlg = QMessageBox(self)
-        dlg.setWindowTitle(f"A propos de {APP_NAME}")
+        dlg.setWindowTitle(tr("about_title", app=APP_NAME))
         icon_path = _resource_path("logo.ico")
         if os.path.exists(icon_path):
             pix = QPixmap(icon_path).scaled(
@@ -93,14 +121,15 @@ class MainWindow(QMainWindow):
         dlg.setTextFormat(Qt.RichText)
         dlg.setText(
             f"<h2>{APP_NAME}</h2>"
-            f"<p><b>Version :</b> {APP_VERSION}<br>"
-            f"<b>Auteur :</b> {APP_AUTHOR}</p>"
-            f"<p>Editeur de couleurs interactif base sur PyQt5, "
-            f"Pillow et NumPy.</p>"
+            f"<p><b>{tr('about_version')} :</b> {APP_VERSION}<br>"
+            f"<b>{tr('about_author')} :</b> {APP_AUTHOR}</p>"
+            f"<p>{tr('about_description')}</p>"
             f"<p><a href=\"{APP_GITHUB}\">{APP_GITHUB}</a></p>"
         )
         dlg.setStandardButtons(QMessageBox.Ok)
         dlg.exec_()
+
+    # ------------------------------------------------------------------ UI
 
     def _build_ui(self):
         splitter = QSplitter(Qt.Horizontal)
@@ -111,12 +140,13 @@ class MainWindow(QMainWindow):
         left.setMaximumWidth(520)
         ll = QVBoxLayout(left)
 
-        title = QLabel("Couleurs detectees")
-        title.setStyleSheet("font-weight:bold;")
-        ll.addWidget(title)
+        self.title_label = QLabel()
+        self.title_label.setStyleSheet("font-weight:bold;")
+        ll.addWidget(self.title_label)
 
         qbox = QHBoxLayout()
-        qbox.addWidget(QLabel("Palette :"))
+        self.palette_label = QLabel()
+        qbox.addWidget(self.palette_label)
         self.palette_spin = QSpinBox()
         self.palette_spin.setRange(2, 128)
         self.palette_spin.setValue(24)
@@ -134,20 +164,23 @@ class MainWindow(QMainWindow):
         ll.addWidget(self.color_scroll, 1)
 
         sel = QHBoxLayout()
-        b1 = QPushButton("Tout cocher"); b1.clicked.connect(lambda: self._set_all(True))
-        b2 = QPushButton("Tout decocher"); b2.clicked.connect(lambda: self._set_all(False))
-        sel.addWidget(b1); sel.addWidget(b2)
+        self.btn_check_all = QPushButton()
+        self.btn_check_all.clicked.connect(lambda: self._set_all(True))
+        self.btn_uncheck_all = QPushButton()
+        self.btn_uncheck_all.clicked.connect(lambda: self._set_all(False))
+        sel.addWidget(self.btn_check_all)
+        sel.addWidget(self.btn_uncheck_all)
         ll.addLayout(sel)
 
         # cible
-        grp = QGroupBox("Couleur cible")
-        gl = QVBoxLayout(grp)
+        self.target_group = QGroupBox()
+        gl = QVBoxLayout(self.target_group)
         self.target_swatch = ColorSwatch(self.target_rgb)
         gl.addWidget(self.target_swatch)
 
-        pick = QPushButton("Choisir avec la palette...")
-        pick.clicked.connect(self._pick_color_dialog)
-        gl.addWidget(pick)
+        self.btn_pick = QPushButton()
+        self.btn_pick.clicked.connect(self._pick_color_dialog)
+        gl.addWidget(self.btn_pick)
 
         self.sliders = {}
         for name in ("R", "G", "B"):
@@ -163,16 +196,17 @@ class MainWindow(QMainWindow):
 
         # Mode de masque
         mode_row = QHBoxLayout()
-        mode_row.addWidget(QLabel("Masque"))
+        self.mask_label = QLabel()
+        mode_row.addWidget(self.mask_label)
         self.mode_combo = QComboBox()
-        self.mode_combo.addItem("Cluster palette (tous les pixels)", "index")
-        self.mode_combo.addItem("Tolerance RGB", "tolerance")
+        self.mode_combo.addItem("", "index")
+        self.mode_combo.addItem("", "tolerance")
         self.mode_combo.currentIndexChanged.connect(self._on_mode_changed)
         mode_row.addWidget(self.mode_combo, 1)
         gl.addLayout(mode_row)
 
         tol = QHBoxLayout()
-        self.tol_label = QLabel("Tolerance")
+        self.tol_label = QLabel()
         tol.addWidget(self.tol_label)
         self.tol_slider = QSlider(Qt.Horizontal)
         self.tol_slider.setRange(0, 64); self.tol_slider.setValue(12)
@@ -180,7 +214,7 @@ class MainWindow(QMainWindow):
         tol.addWidget(self.tol_slider)
         gl.addLayout(tol)
         self._update_tolerance_enabled()
-        ll.addWidget(grp)
+        ll.addWidget(self.target_group)
 
         # -- droite --
         right = QWidget()
@@ -204,19 +238,57 @@ class MainWindow(QMainWindow):
 
         self.setCentralWidget(splitter)
 
+    # ---------------------------------------------------- (re)traduction
+
+    def _retranslate_ui(self, *_):
+        # Menus
+        self.menu_file.setTitle(tr("menu_file"))
+        self.menu_help.setTitle(tr("menu_help"))
+        self.menu_language.setTitle(tr("menu_language"))
+        self.act_open.setText(tr("open"))
+        self.act_save.setText(tr("save"))
+        self.act_quit.setText(tr("quit"))
+        self.act_doc.setText(tr("documentation"))
+        self.act_about.setText(tr("about"))
+
+        # Coche la bonne langue (nom natif inchange)
+        if i18n.current_lang in self.lang_actions:
+            self.lang_actions[i18n.current_lang].setChecked(True)
+
+        # UI gauche
+        self.title_label.setText(tr("detected_colors"))
+        self.palette_label.setText(tr("palette"))
+        self.btn_check_all.setText(tr("check_all"))
+        self.btn_uncheck_all.setText(tr("uncheck_all"))
+        self.target_group.setTitle(tr("target_color"))
+        self.btn_pick.setText(tr("pick_color_btn"))
+        self.mask_label.setText(tr("mask"))
+        self.tol_label.setText(tr("tolerance"))
+
+        # ComboBox : conserver l'index courant
+        cur = self.mode_combo.currentIndex()
+        self.mode_combo.blockSignals(True)
+        self.mode_combo.setItemText(0, tr("mask_cluster"))
+        self.mode_combo.setItemText(1, tr("mask_tolerance"))
+        self.mode_combo.setCurrentIndex(cur)
+        self.mode_combo.blockSignals(False)
+
+        # ImageView placeholder
+        self.image_view.set_placeholder(tr("no_image_loaded"))
+
     # -------------------------------------------------------------- image
 
     def open_image(self):
         path, _ = QFileDialog.getOpenFileName(
-            self, "Ouvrir une image", "",
-            "Images (*.png *.jpg *.jpeg *.bmp *.tiff *.webp)"
+            self, tr("file_dialog_open"), "", tr("file_filter_images")
         )
         if not path:
             return
         try:
             img = Image.open(path).convert("RGBA")
         except Exception as e:
-            QMessageBox.critical(self, "Erreur", f"Impossible d'ouvrir : {e}")
+            QMessageBox.critical(self, tr("title_error"),
+                                 tr("err_cant_open", err=e))
             return
 
         self.original_img = img
@@ -231,11 +303,11 @@ class MainWindow(QMainWindow):
 
     def save_image(self):
         if self.modified_img is None:
-            QMessageBox.information(self, "Info", "Aucune image a enregistrer.")
+            QMessageBox.information(self, tr("title_info"),
+                                    tr("no_image_to_save"))
             return
         path, _ = QFileDialog.getSaveFileName(
-            self, "Enregistrer sous", "",
-            "PNG (*.png);;JPEG (*.jpg);;BMP (*.bmp)"
+            self, tr("file_dialog_save"), "", tr("file_filter_save")
         )
         if not path:
             return
@@ -245,12 +317,12 @@ class MainWindow(QMainWindow):
                 out.convert("RGB").save(path, quality=95)
             else:
                 out.save(path)
-            QMessageBox.information(self, "OK", "Image enregistree.")
+            QMessageBox.information(self, tr("title_ok"), tr("image_saved"))
         except Exception as e:
-            QMessageBox.critical(self, "Erreur", f"Echec : {e}")
+            QMessageBox.critical(self, tr("title_error"),
+                                 tr("fail", err=e))
 
     def _render_full_resolution(self):
-        """Reapplique la transformation sur l'originale pleine resolution."""
         selected_rows = [r for r in self.color_rows if r.is_checked()]
         if not selected_rows or self.original_img.size == self.display_img.size:
             return self.modified_img
@@ -281,7 +353,6 @@ class MainWindow(QMainWindow):
         self.color_rows.clear()
         if self.display_img is None:
             return
-        # Quantifie l'image ENTIERE -> chaque pixel a un index palette
         self.index_map, self.palette, counts = quantize_full(
             self.display_img, self.palette_spin.value()
         )
@@ -301,7 +372,8 @@ class MainWindow(QMainWindow):
     # ----------------------------------------------------------- target
 
     def _pick_color_dialog(self):
-        c = QColorDialog.getColor(QColor(*self.target_rgb), self, "Couleur cible")
+        c = QColorDialog.getColor(QColor(*self.target_rgb), self,
+                                  tr("target_color_dialog"))
         if not c.isValid():
             return
         self.target_rgb = (c.red(), c.green(), c.blue())

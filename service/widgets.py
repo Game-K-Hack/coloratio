@@ -76,6 +76,10 @@ class ImageView(QFrame):
     def minimumSizeHint(self):
         return QSize(1, 1)
 
+    def set_placeholder(self, text: str):
+        self._placeholder = text
+        self.update()
+
     def set_pixmap(self, pix: QPixmap):
         self._pixmap = pix
         self.update()
