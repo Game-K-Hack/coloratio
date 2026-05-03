@@ -21,7 +21,7 @@ a = Analysis(
     ["main.py"],
     pathex=["."],
     binaries=[],
-    datas=[],
+    datas=[("logo.ico", "."), ("logo.png", ".")],
     hiddenimports=hidden,
     hookspath=[],
     hooksconfig={},
@@ -85,5 +85,5 @@ exe = EXE(
     target_arch=None,
     codesign_identity=None,
     entitlements_file=None,
-    # icon="app.ico",        # decommenter si tu ajoutes une icone
+    icon="logo.ico",
 )

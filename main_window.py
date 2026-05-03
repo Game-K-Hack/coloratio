@@ -1,10 +1,18 @@
+import os
+import sys
 from PIL import Image
 from PyQt5.QtCore import Qt
 from PyQt5.QtWidgets import (
     QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton,
     QFileDialog, QSplitter, QScrollArea, QSlider, QColorDialog, QGroupBox,
     QAction, QMessageBox, QProgressBar, QSpinBox, QComboBox)
-from PyQt5.QtGui import QColor
+from PyQt5.QtGui import QColor, QIcon
+
+
+def _resource_path(name: str) -> str:
+    """Resout un fichier ressource en mode dev ou dans un EXE PyInstaller."""
+    base = getattr(sys, "_MEIPASS", os.path.dirname(os.path.abspath(__file__)))
+    return os.path.join(base, name)
 
 from color_utils import pil_to_qpixmap, quantize_full
 from process_thread import ProcessThread
@@ -20,6 +28,9 @@ class MainWindow(QMainWindow):
         super().__init__()
         self.setWindowTitle("Coloratio")
         self.resize(1200, 800)
+        icon_path = _resource_path("logo.ico")
+        if os.path.exists(icon_path):
+            self.setWindowIcon(QIcon(icon_path))
 
         self.original_img = None
         self.display_img = None
